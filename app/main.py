@@ -22,11 +22,12 @@ def main():
 
     client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
 
-    # ✅ Conversation history
+    # ✅ conversation history
     messages = [
         {"role": "user", "content": args.p}
     ]
 
+    # ✅ Advertise tools
     tools = [
         {
             "type": "function",
@@ -42,6 +43,27 @@ def main():
                         }
                     },
                     "required": ["file_path"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "Write",
+                "description": "Write content to a file",
+                "parameters": {
+                    "type": "object",
+                    "required": ["file_path", "content"],
+                    "properties": {
+                        "file_path": {
+                            "type": "string",
+                            "description": "The path of the file to write to"
+                        },
+                        "content": {
+                            "type": "string",
+                            "description": "The content to write to the file"
+                        }
+                    }
                 }
             }
         }
@@ -60,7 +82,6 @@ def main():
 
         message = chat.choices[0].message
 
-        # ✅ Store assistant response
         assistant_message = {
             "role": "assistant",
             "content": message.content,
@@ -71,29 +92,41 @@ def main():
 
         messages.append(assistant_message)
 
-        # ✅ If tool requested
+        # ✅ TOOL EXECUTION
         if message.tool_calls:
             for tool_call in message.tool_calls:
-                function_name = tool_call.function.name
-                arguments = json.loads(tool_call.function.arguments)
+                name = tool_call.function.name.lower()
+                args_json = json.loads(tool_call.function.arguments)
 
-                if function_name.lower() == "read":
-                    file_path = arguments["file_path"]
+                result = ""
+
+                # ---------- READ ----------
+                if name == "read":
+                    file_path = args_json["file_path"]
 
                     with open(file_path, "r") as f:
                         result = f.read()
 
-                    # ✅ Add tool result (DO NOT PRINT)
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": result
-                    })
+                # ---------- WRITE ----------
+                elif name == "write":
+                    file_path = args_json["file_path"]
+                    content = args_json["content"]
 
-            # continue loop
+                    with open(file_path, "w") as f:
+                        f.write(content)
+
+                    result = "File written successfully"
+
+                # ✅ send tool result back
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": result
+                })
+
             continue
 
-        # ✅ FINAL RESPONSE → print & exit
+        # ✅ FINAL ANSWER
         print(message.content)
         break
 
