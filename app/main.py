@@ -1,7 +1,7 @@
 import argparse
 import os
 import json
-import sys
+import subprocess
 
 from openai import OpenAI
 
@@ -22,12 +22,12 @@ def main():
 
     client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
 
-    # ✅ conversation history
+    # ✅ conversation memory
     messages = [
         {"role": "user", "content": args.p}
     ]
 
-    # ✅ Advertise tools
+    # ✅ Tools
     tools = [
         {
             "type": "function",
@@ -37,10 +37,7 @@ def main():
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "file_path": {
-                            "type": "string",
-                            "description": "The path to the file to read"
-                        }
+                        "file_path": {"type": "string"}
                     },
                     "required": ["file_path"]
                 }
@@ -55,13 +52,24 @@ def main():
                     "type": "object",
                     "required": ["file_path", "content"],
                     "properties": {
-                        "file_path": {
+                        "file_path": {"type": "string"},
+                        "content": {"type": "string"}
+                    }
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "Bash",
+                "description": "Execute a shell command",
+                "parameters": {
+                    "type": "object",
+                    "required": ["command"],
+                    "properties": {
+                        "command": {
                             "type": "string",
-                            "description": "The path of the file to write to"
-                        },
-                        "content": {
-                            "type": "string",
-                            "description": "The content to write to the file"
+                            "description": "The command to execute"
                         }
                     }
                 }
@@ -78,13 +86,13 @@ def main():
         )
 
         if not chat.choices:
-            raise RuntimeError("no choices in response")
+            raise RuntimeError("no choices")
 
         message = chat.choices[0].message
 
         assistant_message = {
             "role": "assistant",
-            "content": message.content,
+            "content": message.content
         }
 
         if message.tool_calls:
@@ -100,24 +108,31 @@ def main():
 
                 result = ""
 
-                # ---------- READ ----------
+                # -------- READ --------
                 if name == "read":
-                    file_path = args_json["file_path"]
-
-                    with open(file_path, "r") as f:
+                    with open(args_json["file_path"], "r") as f:
                         result = f.read()
 
-                # ---------- WRITE ----------
+                # -------- WRITE --------
                 elif name == "write":
-                    file_path = args_json["file_path"]
-                    content = args_json["content"]
-
-                    with open(file_path, "w") as f:
-                        f.write(content)
-
+                    with open(args_json["file_path"], "w") as f:
+                        f.write(args_json["content"])
                     result = "File written successfully"
 
-                # ✅ send tool result back
+                # -------- BASH --------
+                elif name == "bash":
+                    command = args_json["command"]
+
+                    completed = subprocess.run(
+                        command,
+                        shell=True,
+                        capture_output=True,
+                        text=True
+                    )
+
+                    result = completed.stdout + completed.stderr
+
+                # ✅ return tool result to model
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
@@ -126,7 +141,7 @@ def main():
 
             continue
 
-        # ✅ FINAL ANSWER
+        # ✅ FINAL RESPONSE
         print(message.content)
         break
 
