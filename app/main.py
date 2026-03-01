@@ -1,11 +1,15 @@
 import argparse
 import os
 import sys
+import json
 
 from openai import OpenAI
 
 API_KEY = os.getenv("OPENROUTER_API_KEY")
-BASE_URL = os.getenv("OPENROUTER_BASE_URL", default="https://openrouter.ai/api/v1")
+BASE_URL = os.getenv(
+    "OPENROUTER_BASE_URL",
+    default="https://openrouter.ai/api/v1"
+)
 
 
 def main():
@@ -18,6 +22,7 @@ def main():
 
     client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
 
+    # ✅ Send request with Read tool advertised
     chat = client.chat.completions.create(
         model="anthropic/claude-haiku-4.5",
         messages=[
@@ -47,9 +52,28 @@ def main():
     if not chat.choices or len(chat.choices) == 0:
         raise RuntimeError("no choices in response")
 
-    print("Logs from your program will appear here!", file=sys.stderr)
+    message = chat.choices[0].message
 
-    print(chat.choices[0].message.content)
+    # ✅ Detect tool call
+    if message.tool_calls:
+        tool_call = message.tool_calls[0]
+
+        function_name = tool_call.function.name
+        arguments = json.loads(tool_call.function.arguments)
+
+        # ✅ Execute Read tool
+        if function_name.lower() == "read":
+            file_path = arguments["file_path"]
+
+            with open(file_path, "r") as f:
+                content = f.read()
+
+            # Print exact file contents
+            print(content)
+            return
+
+    # ✅ Normal LLM response (no tool call)
+    print(message.content)
 
 
 if __name__ == "__main__":
